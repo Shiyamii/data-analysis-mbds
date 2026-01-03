@@ -35,12 +35,9 @@ library(rpart.plot)    # Visualisation arbres de decision
 library(randomForest)  # Random Forest
 library(e1071)         # SVM et Naive Bayes
 library(pROC)          # Courbes ROC et AUC
-library(ROSE)          # Pour le reequilibrage des classes
-library(dbscan)        # DBSCAN clustering
 library(factoextra)    # Visualisation clustering
 library(corrplot)      # Correlation
 library(gridExtra)     # Arrangement de graphiques
-library(naivebayes)
 
 # ------------------------------------------------------------------------------
 # 2. CHARGEMENT ET EXPLORATION DES DONNeES
@@ -316,33 +313,7 @@ cat("\nTable de contingence PAM:\n")
 print(table(df_analysis$cluster_pam, df_analysis$fraudulent))
 
 # ------------------------------------------------------------------------------
-# 5.5 CLUSTERING DBSCAN
-# ------------------------------------------------------------------------------
-cat("\n--- Clustering DBSCAN ---\n")
-
-# Conversion de la matrice de distance pour dbscan
-dist_matrix <- as.matrix(dmatrix)
-
-# Recherche des parametres optimaux
-# On utilise kNNdistplot pour trouver eps
-png("dbscan_knee_plot.png", width = 800, height = 600)
-kNNdistplot(dist_matrix, k = 5)
-abline(h = 0.15, col = "red", lty = 2)
-dev.off()
-
-# Application de DBSCAN
-dbscan_result <- dbscan(dist_matrix, eps = 0.15, minPts = 10)
-df_analysis$cluster_dbscan <- as.factor(dbscan_result$cluster)
-
-cat("Nombre de clusters trouves:", max(dbscan_result$cluster), "\n")
-cat("Points de bruit (cluster 0):", sum(dbscan_result$cluster == 0), "\n")
-
-# Table de contingence DBSCAN
-cat("\nTable de contingence DBSCAN:\n")
-print(table(df_analysis$cluster_dbscan, df_analysis$fraudulent))
-
-# ------------------------------------------------------------------------------
-# 5.6 VISUALISATION DES CLUSTERS (PCA)
+# 5.5 VISUALISATION DES CLUSTERS (PCA)
 # ------------------------------------------------------------------------------
 cat("\n--- Visualisation des clusters avec PCA ---\n")
 
@@ -526,95 +497,6 @@ cat("Specificite:", round(cm_svm$byClass["Specificity"], 3), "\n")
 cat("Precision:", round(cm_svm$byClass["Precision"], 3), "\n")
 
 # ------------------------------------------------------------------------------
-# 6.7 MODeLE 4: NAIVE BAYES
-# ------------------------------------------------------------------------------
-cat("\n--- Modele 4: Naive Bayes ---\n")
-
-model_nb <- train(
-  fraudulent ~ .,
-  data = train_data,
-  method = "naive_bayes",
-  trControl = ctrl,
-  metric = "ROC"
-)
-
-# Predictions
-pred_nb <- predict(model_nb, test_data)
-prob_nb <- predict(model_nb, test_data, type = "prob")
-
-# Matrice de confusion
-cm_nb <- confusionMatrix(pred_nb, test_data$fraudulent, positive = "Yes")
-cat("\nMatrice de confusion - Naive Bayes:\n")
-print(cm_nb$table)
-cat("\nMetriques:\n")
-cat("Accuracy:", round(cm_nb$overall["Accuracy"], 3), "\n")
-cat("Sensibilite (Recall):", round(cm_nb$byClass["Sensitivity"], 3), "\n")
-cat("Specificite:", round(cm_nb$byClass["Specificity"], 3), "\n")
-cat("Precision:", round(cm_nb$byClass["Precision"], 3), "\n")
-
-# ------------------------------------------------------------------------------
-# 6.8 MODeLE 5: ReGRESSION LOGISTIQUE
-# ------------------------------------------------------------------------------
-cat("\n--- Modele 5: Regression Logistique ---\n")
-
-model_glm <- train(
-  fraudulent ~ .,
-  data = train_data,
-  method = "glm",
-  family = "binomial",
-  trControl = ctrl,
-  metric = "ROC"
-)
-
-# Predictions
-pred_glm <- predict(model_glm, test_data)
-prob_glm <- predict(model_glm, test_data, type = "prob")
-
-# Matrice de confusion
-cm_glm <- confusionMatrix(pred_glm, test_data$fraudulent, positive = "Yes")
-cat("\nMatrice de confusion - Regression Logistique:\n")
-print(cm_glm$table)
-cat("\nMetriques:\n")
-cat("Accuracy:", round(cm_glm$overall["Accuracy"], 3), "\n")
-cat("Sensibilite (Recall):", round(cm_glm$byClass["Sensitivity"], 3), "\n")
-cat("Specificite:", round(cm_glm$byClass["Specificity"], 3), "\n")
-cat("Precision:", round(cm_glm$byClass["Precision"], 3), "\n")
-
-# ------------------------------------------------------------------------------
-# 6.9 MODeLE 6: RANDOM FOREST AVEC ReeQUILIBRAGE (ROSE)
-# ------------------------------------------------------------------------------
-cat("\n--- Modele 6: Random Forest avec reequilibrage ROSE ---\n")
-
-# Reequilibrage des classes avec ROSE
-train_balanced <- ROSE(fraudulent ~ ., data = train_data, seed = 42)$data
-cat("Distribution apres ROSE:\n")
-print(table(train_balanced$fraudulent))
-
-model_rf_balanced <- train(
-  fraudulent ~ .,
-  data = train_balanced,
-  method = "rf",
-  trControl = ctrl,
-  metric = "ROC",
-  tuneGrid = data.frame(mtry = c(2, 3, 4, 5)),
-  ntree = 500
-)
-
-# Predictions
-pred_rf_bal <- predict(model_rf_balanced, test_data)
-prob_rf_bal <- predict(model_rf_balanced, test_data, type = "prob")
-
-# Matrice de confusion
-cm_rf_bal <- confusionMatrix(pred_rf_bal, test_data$fraudulent, positive = "Yes")
-cat("\nMatrice de confusion - RF avec ROSE:\n")
-print(cm_rf_bal$table)
-cat("\nMetriques:\n")
-cat("Accuracy:", round(cm_rf_bal$overall["Accuracy"], 3), "\n")
-cat("Sensibilite (Recall):", round(cm_rf_bal$byClass["Sensitivity"], 3), "\n")
-cat("Specificite:", round(cm_rf_bal$byClass["Specificity"], 3), "\n")
-cat("Precision:", round(cm_rf_bal$byClass["Precision"], 3), "\n")
-
-# ------------------------------------------------------------------------------
 # 7. COMPARAISON ET SeLECTION DU MEILLEUR MODeLE
 # ------------------------------------------------------------------------------
 
@@ -633,30 +515,20 @@ calculate_cost <- function(cm, fn_weight = 10, fp_weight = 1) {
 roc_tree <- roc(test_data$fraudulent, prob_tree$Yes, levels = c("No", "Yes"))
 roc_rf <- roc(test_data$fraudulent, prob_rf$Yes, levels = c("No", "Yes"))
 roc_svm <- roc(test_svm$fraudulent, prob_svm$Yes, levels = c("No", "Yes"))
-roc_nb <- roc(test_data$fraudulent, prob_nb$Yes, levels = c("No", "Yes"))
-roc_glm <- roc(test_data$fraudulent, prob_glm$Yes, levels = c("No", "Yes"))
-roc_rf_bal <- roc(test_data$fraudulent, prob_rf_bal$Yes, levels = c("No", "Yes"))
 
 # Tableau comparatif
 comparison <- data.frame(
-  Modele = c("Arbre Decision", "Random Forest", "SVM", "Naive Bayes",
-             "Reg. Logistique", "RF + ROSE"),
+  Modele = c("Arbre Decision", "Random Forest", "SVM"),
   Accuracy = c(cm_tree$overall["Accuracy"], cm_rf$overall["Accuracy"],
-               cm_svm$overall["Accuracy"], cm_nb$overall["Accuracy"],
-               cm_glm$overall["Accuracy"], cm_rf_bal$overall["Accuracy"]),
+               cm_svm$overall["Accuracy"]),
   Sensibilite = c(cm_tree$byClass["Sensitivity"], cm_rf$byClass["Sensitivity"],
-                  cm_svm$byClass["Sensitivity"], cm_nb$byClass["Sensitivity"],
-                  cm_glm$byClass["Sensitivity"], cm_rf_bal$byClass["Sensitivity"]),
+                  cm_svm$byClass["Sensitivity"]),
   Specificite = c(cm_tree$byClass["Specificity"], cm_rf$byClass["Specificity"],
-                  cm_svm$byClass["Specificity"], cm_nb$byClass["Specificity"],
-                  cm_glm$byClass["Specificity"], cm_rf_bal$byClass["Specificity"]),
+                  cm_svm$byClass["Specificity"]),
   Precision = c(cm_tree$byClass["Precision"], cm_rf$byClass["Precision"],
-                cm_svm$byClass["Precision"], cm_nb$byClass["Precision"],
-                cm_glm$byClass["Precision"], cm_rf_bal$byClass["Precision"]),
-  AUC = c(auc(roc_tree), auc(roc_rf), auc(roc_svm), auc(roc_nb),
-          auc(roc_glm), auc(roc_rf_bal)),
-  Cout = c(calculate_cost(cm_tree), calculate_cost(cm_rf), calculate_cost(cm_svm),
-           calculate_cost(cm_nb), calculate_cost(cm_glm), calculate_cost(cm_rf_bal))
+                cm_svm$byClass["Precision"]),
+  AUC = c(auc(roc_tree), auc(roc_rf), auc(roc_svm)),
+  Cout = c(calculate_cost(cm_tree), calculate_cost(cm_rf), calculate_cost(cm_svm))
 )
 
 comparison[, 2:7] <- round(comparison[, 2:7], 3)
@@ -669,9 +541,6 @@ png("courbes_roc.png", width = 1000, height = 800)
 plot(roc_tree, col = "red", main = "Courbes ROC - Comparaison des modeles")
 plot(roc_rf, col = "blue", add = TRUE)
 plot(roc_svm, col = "green", add = TRUE)
-plot(roc_nb, col = "purple", add = TRUE)
-plot(roc_glm, col = "orange", add = TRUE)
-plot(roc_rf_bal, col = "brown", add = TRUE)
 legend("bottomright",
        legend = paste(comparison$Modele, "- AUC:", round(comparison$AUC, 3)),
        col = c("red", "blue", "green", "purple", "orange", "brown"),
@@ -705,8 +574,8 @@ cat("\n=== OPTIMISATION DU SEUIL DE DeCISION ===\n")
 # Pour le meilleur modele, on optimise le seuil pour maximiser la sensibilite
 # tout en gardant une specificite acceptable
 
-# On utilise le modele RF avec ROSE comme reference
-probs_best <- prob_rf_bal$Yes
+# On utilise le modele Random Forest comme exemple
+probs_best <- prob_rf$Yes
 
 # Test de differents seuils
 thresholds <- seq(0.1, 0.9, by = 0.05)
@@ -768,7 +637,7 @@ cat("  - ntree: 500\n")
 cat("  - Seuil de decision:", optimal_threshold, "\n")
 
 # Application finale sur les donnees de test avec le seuil optimise
-final_pred <- ifelse(prob_rf_bal$Yes >= optimal_threshold, "Yes", "No")
+final_pred <- ifelse(prob_rf$Yes >= optimal_threshold, "Yes", "No")
 final_pred <- factor(final_pred, levels = c("No", "Yes"))
 
 cm_final <- confusionMatrix(final_pred, test_data$fraudulent, positive = "Yes")
@@ -791,7 +660,7 @@ cat("\n=== PReDICTION SUR LES NOUVELLES DONNeES ===\n")
 # Chargement des nouvelles donnees
 # Note: Assurez-vous que le fichier Data_Projet_New.csv existe avec le bon format
 if(file.exists("Data_Projet_New.csv")) {
-  # df_new <- read.csv("Data_Projet_New.csv", sep=",", dec=".", stringsAsFactors = TRUE)
+  df_new <- read.csv("Data_Projet_New.csv", sep=",", dec=".", stringsAsFactors = TRUE)
 
   # Pretraitement identique aux donnees d'entraînement
   df_new$claim_id <- as.character(df_new$claim_id)
@@ -875,12 +744,12 @@ cat("   - 12 variables dont 1 variable cible (fraudulent)\n")
 cat("   - Desequilibre des classes detecte et traite\n")
 
 cat("\n2. CLUSTERING:\n")
-cat("   - Methodes utilisees: Hierarchique (AGNES), K-Medoids (PAM), DBSCAN\n")
+cat("   - Methodes utilisees: Hierarchique (AGNES), K-Medoids (PAM)\n")
 cat("   - Meilleur nombre de clusters:", best_k_hc, "\n")
 cat("   - Les clusters permettent d'identifier des profils distincts\n")
 
 cat("\n3. CLASSIFICATION:\n")
-cat("   - 6 modeles testes\n")
+cat("   - 3 modeles testes\n")
 cat("   - Meilleur modele:", best_model_name, "\n")
 cat("   - Seuil optimise:", optimal_threshold, "\n")
 
