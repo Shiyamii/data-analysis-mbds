@@ -93,7 +93,7 @@ cat("\nPourcentage de fraudes:", round(prop_fraude["Yes"] * 100, 2), "%\n")
 cat("Pourcentage de non-fraudes:", round(prop_fraude["No"] * 100, 2), "%\n")
 
 # Visualisation de la distribution de la cible
-png("distribution_fraudes.png", width = 800, height = 600)
+png("distribution_fraudes.png", width = 600, height = 400)
 barplot(table_fraude,
         main = "Distribution des Fraudes",
         col = c("steelblue", "coral"),
@@ -122,15 +122,15 @@ for(var in numeric_vars) {
 }
 
 # 3.2 Visualisation des distributions par classe
-png("distributions_numeriques.png", width = 1200, height = 800)
-par(mfrow = c(2, 2))
 for(var in numeric_vars) {
+  png_title <- paste("distributions_numeriques", var, ".png" , sep = "_")
+  png(png_title, width = 600, height = 400)
   boxplot(df[[var]] ~ df$fraudulent,
           main = paste("Distribution de", var, "par classe"),
           xlab = "Fraudulent", ylab = var,
           col = c("steelblue", "coral"))
+  dev.off()
 }
-dev.off()
 
 # 3.3 Analyse des variables categorielles
 cat_vars <- c("gender", "incident_cause", "claim_area", "police_report", "claim_type")
@@ -145,9 +145,9 @@ for(var in cat_vars) {
 }
 
 # 3.4 Visualisation des variables categorielles
-png("distributions_categorielles.png", width = 1400, height = 1000)
-par(mfrow = c(2, 3))
 for(var in cat_vars) {
+  png_title <- paste("distributions_categorielles", var, ".png" , sep = "_")
+  png(png_title, width = 600, height = 400)
   tab <- table(df[[var]], df$fraudulent)
   barplot(t(tab), beside = TRUE,
           main = paste("Repartition de", var),
@@ -155,8 +155,8 @@ for(var in cat_vars) {
           legend.text = c("No", "Yes"),
           args.legend = list(x = "topright"),
           las = 2, cex.names = 0.7)
+  dev.off()
 }
-dev.off()
 
 # 3.5 Matrice de correlation pour les variables numeriques
 df_numeric <- df[, numeric_vars]
@@ -505,11 +505,23 @@ cat("\n=== COMPARAISON DES MODeLES ===\n")
 # Fonction pour calculer le coût (penalise davantage les faux negatifs)
 # Faux negatif = fraude classee comme non-fraude (tres coûteux)
 # Faux positif = non-fraude classee comme fraude (coûteux mais moins)
-calculate_cost <- function(cm, fn_weight = 10, fp_weight = 1) {
+calculate_cost <- function(cm, fn_weight = 5, fp_weight = 1) {
   fn <- cm$table[1, 2]  # Faux negatifs
   fp <- cm$table[2, 1]  # Faux positifs
   return(fn * fn_weight + fp * fp_weight)
 }
+
+# Calcul du poids des faux negatif en fonction des donnees de fraude (mediane de claim_amount pour les fraudes)
+avg_fraud_amount <- mean(df$claim_amount[df$fraudulent == "Yes"])
+
+# Choix arbitraire pour le poids du faux passitive
+avg_check_price <- 1100  # Coût moyen d'une vérification manuelle
+fn_weight <- round(avg_fraud_amount / avg_check_price, 2)
+cat("\n--- Poids des erreurs ---\n")
+cat("Montant moyen des fraudes:", round(avg_fraud_amount), "\n")
+cat("Cout moyen d'une vérification manuelle:", avg_check_price, "\n")
+cat("Poids des faux negatifs (fn_weight):", fn_weight, "\n")
+cat("Poids des faux positifs (fp_weight): 1\n")
 
 # Calcul des ROC et AUC
 roc_tree <- roc(test_data$fraudulent, prob_tree$Yes, levels = c("No", "Yes"))
@@ -528,7 +540,7 @@ comparison <- data.frame(
   Precision = c(cm_tree$byClass["Precision"], cm_rf$byClass["Precision"],
                 cm_svm$byClass["Precision"]),
   AUC = c(auc(roc_tree), auc(roc_rf), auc(roc_svm)),
-  Cout = c(calculate_cost(cm_tree), calculate_cost(cm_rf), calculate_cost(cm_svm))
+  Cout = c(calculate_cost(cm_tree,fn_weight), calculate_cost(cm_rf,fn_weight), calculate_cost(cm_svm,fn_weight))
 )
 
 comparison[, 2:7] <- round(comparison[, 2:7], 3)
@@ -552,13 +564,11 @@ cat("\n--- SeLECTION DU MEILLEUR MODeLE ---\n")
 cat("Critere principal: Maximiser la sensibilite (recall) pour minimiser les faux negatifs\n")
 cat("Critere secondaire: AUC eleve\n\n")
 
-# Calcul d'un score combine: sensibilite*0.6 + AUC*0.4
-comparison$Score <- comparison$Sensibilite * 0.6 + comparison$AUC * 0.4
-best_model_idx <- which.max(comparison$Score)
+
+best_model_idx <- which.max(comparison$Cout)
 best_model_name <- comparison$Modele[best_model_idx]
 
 cat("Meilleur modele selectionne:", best_model_name, "\n")
-cat("Score combine:", round(comparison$Score[best_model_idx], 3), "\n")
 cat("Sensibilite:", comparison$Sensibilite[best_model_idx], "\n")
 cat("AUC:", comparison$AUC[best_model_idx], "\n")
 
@@ -578,7 +588,7 @@ cat("\n=== OPTIMISATION DU SEUIL DE DeCISION ===\n")
 probs_best <- prob_rf$Yes
 
 # Test de differents seuils
-thresholds <- seq(0.1, 0.9, by = 0.05)
+thresholds <- seq(0.01, 0.4, by = 0.01)
 threshold_results <- data.frame()
 
 for(thresh in thresholds) {
@@ -586,7 +596,7 @@ for(thresh in thresholds) {
   pred_thresh <- factor(pred_thresh, levels = c("No", "Yes"))
 
   cm_thresh <- confusionMatrix(pred_thresh, test_data$fraudulent, positive = "Yes")
-  score <- cm_thresh$table[1, 2] * 5 + cm_thresh$table[2, 1]  # Cout avec poids
+  cout <- calculate_cost(cm_thresh,fn_weight)
 
   threshold_results <- rbind(threshold_results, data.frame(
     Seuil = thresh,
@@ -595,22 +605,21 @@ for(thresh in thresholds) {
     Precision = ifelse(is.na(cm_thresh$byClass["Precision"]), 0, cm_thresh$byClass["Precision"]),
     FN = cm_thresh$table[1, 2],
     FP = cm_thresh$table[2, 1],
-    Score = score
+    Cout = cout
   ))
 }
 
 cat("\n--- Analyse des seuils ---\n")
 print(threshold_results)
 
-# Selection du seuil optimal (score minimum)
-optimal_threshold <- threshold_results$Seuil[which.min(threshold_results$Score)]
+# Selection du seuil optimal (cout minimum)
+optimal_threshold <- threshold_results$Seuil[which.min(threshold_results$Cout)]
 cat("\nSeuil optimal selectionne:", optimal_threshold, "\n")
 
 # Visualisation
 png("optimisation_seuil.png", width = 800, height = 600)
 ggplot(threshold_results, aes(x = Seuil)) +
-  geom_line(aes(y = Sensibilite, color = "Sensibilite"), size = 1) +
-  geom_line(aes(y = Specificite, color = "Specificite"), size = 1) +
+  geom_line(aes(y = Cout, color = "Cout"), size = 1) +
   geom_vline(xintercept = optimal_threshold, linetype = "dashed", color = "red") +
   labs(title = "Optimisation du seuil de decision",
        x = "Seuil de probabilite",
@@ -627,11 +636,11 @@ dev.off()
 
 cat("\n=== MODeLE FINAL ===\n")
 
-# Le modele final est RF avec ROSE et le seuil optimise
+# Le modele final est RF avec le seuil optimise
 final_model <- model_rf
 
 # Description du modele final
-cat("Type de modele: Random Forest avec reequilibrage ROSE\n")
+cat("Type de modele: Random Forest avec reequilibrage\n")
 cat("Parametres:\n")
 cat("  - mtry:", final_model$bestTune$mtry, "\n")
 cat("  - ntree: 500\n")
