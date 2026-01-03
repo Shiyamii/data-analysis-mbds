@@ -586,6 +586,7 @@ for(thresh in thresholds) {
   pred_thresh <- factor(pred_thresh, levels = c("No", "Yes"))
 
   cm_thresh <- confusionMatrix(pred_thresh, test_data$fraudulent, positive = "Yes")
+  score <- cm_thresh$table[1, 2] * 5 + cm_thresh$table[2, 1]  # Cout avec poids
 
   threshold_results <- rbind(threshold_results, data.frame(
     Seuil = thresh,
@@ -593,16 +594,16 @@ for(thresh in thresholds) {
     Specificite = cm_thresh$byClass["Specificity"],
     Precision = ifelse(is.na(cm_thresh$byClass["Precision"]), 0, cm_thresh$byClass["Precision"]),
     FN = cm_thresh$table[1, 2],
-    FP = cm_thresh$table[2, 1]
+    FP = cm_thresh$table[2, 1],
+    Score = score
   ))
 }
 
 cat("\n--- Analyse des seuils ---\n")
 print(threshold_results)
 
-# Selection du seuil optimal (minimise FN tout en gardant une specificite > 0.5)
-optimal_threshold <- with(threshold_results[threshold_results$Specificite > 0.5, ],
-                          Seuil[which.min(FN)])
+# Selection du seuil optimal (score minimum)
+optimal_threshold <- threshold_results$Seuil[which.min(threshold_results$Score)]
 cat("\nSeuil optimal selectionne:", optimal_threshold, "\n")
 
 # Visualisation
