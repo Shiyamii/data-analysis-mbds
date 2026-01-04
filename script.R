@@ -1,10 +1,5 @@
 # ==============================================================================
-# PROJET : DeTECTION DE FRAUDES DANS LE DOMAINE DE L'ASSURANCE
-# ==============================================================================
-# Auteur: [Votre Nom]
-# Date: [Date]
-# Description: Analyse des declarations frauduleuses et construction d'un modele
-#              de prediction des fraudes pour une societe d'assurance.
+# PROJET : DETECTION DE FRAUDES DANS LE DOMAINE DE L'ASSURANCE
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -15,29 +10,28 @@ cat("\014")      # Efface la console
 
 # Configuration des options globales
 options(scipen = 999)  # Desactive la notation scientifique
-set.seed(42)           # Pour la reproductibilite des resultats
+set.seed(42)      # Pour la reproductibilite des resultats
+
 
 # ------------------------------------------------------------------------------
-# 1. CHARGEMENT DES BIBLIOTHeQUES
+# 1. CHARGEMENT DES BIBLIOTHEQUES
 # ------------------------------------------------------------------------------
 # Installation des packages si necessaire (decommenter si besoin)
-# install.packages(c("cluster", "fpc", "ggplot2", "dplyr", "caret", "rpart",
-#                    "rpart.plot", "randomForest", "e1071", "pROC", "ROSE",
-#                    "dbscan", "factoextra", "corrplot", "gridExtra"))
+# install.packages(c("cluster", "ggplot2", "caret", "rpart",
+#                    "rpart.plot", "randomForest", "e1071", "pROC",
+#                     "corrplot", "gridExtra"))
 
 library(cluster)       # Pour le clustering (daisy, agnes, pam)
-library(fpc)           # Pour l'evaluation des clusters
 library(ggplot2)       # Visualisations
-library(dplyr)         # Manipulation de donnees
 library(caret)         # Machine Learning
 library(rpart)         # Arbres de decision
 library(rpart.plot)    # Visualisation arbres de decision
 library(randomForest)  # Random Forest
-library(e1071)         # SVM et Naive Bayes
+library(e1071)         # SVM
 library(pROC)          # Courbes ROC et AUC
-library(factoextra)    # Visualisation clustering
 library(corrplot)      # Correlation
 library(gridExtra)     # Arrangement de graphiques
+
 
 # ------------------------------------------------------------------------------
 # 2. CHARGEMENT ET EXPLORATION DES DONNeES
@@ -46,7 +40,7 @@ library(gridExtra)     # Arrangement de graphiques
 # 2.1 Importation des donnees d'entraînement
 df <- read.csv("Data_Projet.csv", sep=",", dec=".", stringsAsFactors = TRUE)
 
-cat("=== EXPLORATION INITIALE DES DONNeES ===\n")
+cat("=== EXPLORATION INITIALE DES DONNEES ===\n")
 cat("Dimensions du jeu de donnees:", dim(df)[1], "lignes,", dim(df)[2], "colonnes\n\n")
 
 # Affichage de la structure
@@ -79,7 +73,7 @@ df$gender <- as.factor(tolower(as.character(df$gender)))
 cat("\n--- Traitement des valeurs aberrantes ---\n")
 cat("Valeurs d'âge > 100:", sum(df$age > 100), "\n")
 
-# Option 1: Remplacer par la mediane des valeurs valides
+# Remplacer par la mediane des valeurs valides
 median_age <- median(df$age[df$age <= 100])
 df$age[df$age > 100] <- median_age
 cat("Valeurs aberrantes d'âge remplacees par la mediane:", median_age, "\n")
@@ -104,6 +98,7 @@ text(x = c(0.7, 1.9), y = table_fraude - 50,
      labels = paste0(round(prop_fraude * 100, 1), "%"),
      cex = 1.2, col = "white", font = 2)
 dev.off()
+
 
 # ------------------------------------------------------------------------------
 # 3. ANALYSE EXPLORATOIRE APPROFONDIE
@@ -170,19 +165,19 @@ corrplot(cor_matrix, method = "color", type = "upper",
          title = "Matrice de correlation", mar = c(0, 0, 1, 0))
 dev.off()
 
+
+
+
 # ------------------------------------------------------------------------------
-# 4. PReTRAITEMENT DES DONNeES
+# 4. PRETRAITEMENT DES DONNEES
 # ------------------------------------------------------------------------------
 
-cat("\n=== PReTRAITEMENT DES DONNeES ===\n")
+cat("\n=== PRETRAITEMENT DES DONNEES ===\n")
 
 # 4.1 Creation du dataframe pour l'analyse (sans les IDs)
 df_analysis <- df[, !names(df) %in% c("claim_id", "customer_id")]
 
-# 4.2 Encodage des variables categorielles pour certains algorithmes
-# On garde les facteurs pour les algorithmes qui les supportent
-
-# 4.3 Creation de variables derivees potentiellement utiles
+# 4.2 Creation de variables derivees potentiellement utiles
 # Ratio montant/nombre de declarations
 df_analysis$amount_per_claim <- df_analysis$claim_amount / df_analysis$total_policy_claims
 
@@ -198,13 +193,15 @@ df_analysis$delay_category <- cut(df_analysis$days_to_incident,
 
 cat("Variables creees: amount_per_claim, age_category, delay_category\n")
 
-# 4.4 Normalisation des variables numeriques pour le clustering
+# 4.3 Normalisation des variables numeriques pour le clustering
 df_scaled <- df_analysis
 numeric_cols <- c("age", "days_to_incident", "claim_amount", "total_policy_claims", "amount_per_claim")
 df_scaled[, numeric_cols] <- scale(df_scaled[, numeric_cols])
 
+
+
 # ------------------------------------------------------------------------------
-# 5. CLUSTERING - ANALYSE NON-SUPERVISeE
+# 5. CLUSTERING - ANALYSE NON-SUPEREISeE
 # ------------------------------------------------------------------------------
 
 cat("\n=== CLUSTERING ===\n")
@@ -213,9 +210,10 @@ cat("Objectif: Identifier des sous-groupes de fraudes et non-fraudes\n\n")
 # 5.1 Preparation des donnees pour le clustering
 # On exclut la variable cible et les nouvelles variables categorielles
 vars_cluster <- c("age", "days_to_incident", "claim_amount", "total_policy_claims",
-                  "gender", "incident_cause", "claim_area", "police_report", "claim_type")
+                  "gender", "incident_cause", "claim_area", "police_report", "claim_type",
+                  "amount_per_claim", "age_category", "delay_category")
 
-df_cluster <- df_analysis[, vars_cluster]
+df_cluster <- df_scaled[, vars_cluster]
 
 # 5.2 Calcul de la matrice de distance (Gower pour donnees mixtes)
 cat("Calcul de la matrice de distance de Gower...\n")
@@ -293,7 +291,8 @@ for(cl in 1:best_k_hc) {
   cat("\nModes des variables categorielles:\n")
   for(var in c("gender", "incident_cause", "claim_area", "police_report", "claim_type")) {
     mode_val <- names(sort(table(subset_cl[[var]]), decreasing = TRUE))[1]
-    cat("  ", var, ":", mode_val, "\n")
+    percent_val <- round(max(prop.table(table(subset_cl[[var]])))*100, 1)
+    cat("  ", var, ":", mode_val, "(", percent_val, ")\n")
   }
 }
 
@@ -349,6 +348,8 @@ p2 <- ggplot(pca_data, aes(x = PC1, y = PC2, color = cluster_hc)) +
 grid.arrange(p1, p2, ncol = 2)
 dev.off()
 
+
+
 # ------------------------------------------------------------------------------
 # 6. CLASSIFICATION SUPERVISeE
 # ------------------------------------------------------------------------------
@@ -357,7 +358,10 @@ cat("\n=== CLASSIFICATION SUPERVISeE ===\n")
 cat("Objectif: Minimiser les faux negatifs (fraudes predites comme non-fraudes)\n\n")
 
 # 6.1 Preparation des donnees pour la classification
-df_class <- df_analysis[, c(vars_cluster, "fraudulent")]
+vars_classifcation <- c("age", "days_to_incident", "claim_amount", "total_policy_claims",
+                  "gender", "incident_cause", "claim_area", "police_report", "claim_type")
+
+df_class <- df_analysis[, c(vars_classifcation, "fraudulent")]
 
 # 6.2 Division en ensembles d'apprentissage et de test
 # Stratified sampling pour conserver les proportions de classes
@@ -496,11 +500,14 @@ cat("Sensibilite (Recall):", round(cm_svm$byClass["Sensitivity"], 3), "\n")
 cat("Specificite:", round(cm_svm$byClass["Specificity"], 3), "\n")
 cat("Precision:", round(cm_svm$byClass["Precision"], 3), "\n")
 
+
+
+
 # ------------------------------------------------------------------------------
-# 7. COMPARAISON ET SeLECTION DU MEILLEUR MODeLE
+# 7. COMPARAISON ET SELECTION DU MEILLEUR MODELE
 # ------------------------------------------------------------------------------
 
-cat("\n=== COMPARAISON DES MODeLES ===\n")
+cat("\n=== COMPARAISON DES MODELES ===\n")
 
 # Fonction pour calculer le coût (penalise davantage les faux negatifs)
 # Faux negatif = fraude classee comme non-fraude (tres coûteux)
@@ -519,7 +526,7 @@ avg_check_price <- 1100  # Coût moyen d'une vérification manuelle
 fn_weight <- round(avg_fraud_amount / avg_check_price, 2)
 cat("\n--- Poids des erreurs ---\n")
 cat("Montant moyen des fraudes:", round(avg_fraud_amount), "\n")
-cat("Cout moyen d'une vérification manuelle:", avg_check_price, "\n")
+cat("Cout moyen d'une verification manuelle:", avg_check_price, "\n")
 cat("Poids des faux negatifs (fn_weight):", fn_weight, "\n")
 cat("Poids des faux positifs (fp_weight): 1\n")
 
@@ -548,24 +555,11 @@ comparison[, 2:7] <- round(comparison[, 2:7], 3)
 cat("\n--- Tableau comparatif des modeles ---\n")
 print(comparison)
 
-# Visualisation des courbes ROC
-png("courbes_roc.png", width = 1000, height = 800)
-plot(roc_tree, col = "red", main = "Courbes ROC - Comparaison des modeles")
-plot(roc_rf, col = "blue", add = TRUE)
-plot(roc_svm, col = "green", add = TRUE)
-legend("bottomright",
-       legend = paste(comparison$Modele, "- AUC:", round(comparison$AUC, 3)),
-       col = c("red", "blue", "green", "purple", "orange", "brown"),
-       lwd = 2, cex = 0.8)
-dev.off()
-
 # Selection du meilleur modele (critere: maximiser sensibilite tout en maintenant AUC acceptable)
-cat("\n--- SeLECTION DU MEILLEUR MODeLE ---\n")
-cat("Critere principal: Maximiser la sensibilite (recall) pour minimiser les faux negatifs\n")
-cat("Critere secondaire: AUC eleve\n\n")
+cat("\n--- SELECTION DU MEILLEUR MODeLE ---\n")
+cat("Critere principal: Cout le plus faible.\n")
 
-
-best_model_idx <- which.max(comparison$Cout)
+best_model_idx <- which.min(comparison$Cout)
 best_model_name <- comparison$Modele[best_model_idx]
 
 cat("Meilleur modele selectionne:", best_model_name, "\n")
@@ -575,11 +569,13 @@ cat("AUC:", comparison$AUC[best_model_idx], "\n")
 # Sauvegarde du tableau comparatif
 write.csv(comparison, "comparaison_modeles.csv", row.names = FALSE)
 
+
+
 # ------------------------------------------------------------------------------
-# 8. OPTIMISATION DU SEUIL DE DeCISION
+# 8. OPTIMISATION DU SEUIL DE DECISION
 # ------------------------------------------------------------------------------
 
-cat("\n=== OPTIMISATION DU SEUIL DE DeCISION ===\n")
+cat("\n=== OPTIMISATION DU SEUIL DE DECISION ===\n")
 
 # Pour le meilleur modele, on optimise le seuil pour maximiser la sensibilite
 # tout en gardant une specificite acceptable
@@ -630,8 +626,11 @@ ggplot(threshold_results, aes(x = Seuil)) +
            label = paste("Seuil optimal:", optimal_threshold), color = "red")
 dev.off()
 
+
+
+
 # ------------------------------------------------------------------------------
-# 9. MODeLE FINAL ET PReDICTIONS SUR LES NOUVELLES DONNeES
+# 9. MODELE FINAL ET PREDICTIONS SUR LES NOUVELLES DONNEES
 # ------------------------------------------------------------------------------
 
 cat("\n=== MODeLE FINAL ===\n")
@@ -661,11 +660,14 @@ cat("Precision:", round(cm_final$byClass["Precision"], 3), "\n")
 cat("Faux negatifs:", cm_final$table[1, 2], "\n")
 cat("Faux positifs:", cm_final$table[2, 1], "\n")
 
+
+
+
 # ------------------------------------------------------------------------------
-# 10. PReDICTION SUR LES NOUVELLES DONNeES
+# 10. PREDICTION SUR LES NOUVELLES DONNEES
 # ------------------------------------------------------------------------------
 
-cat("\n=== PReDICTION SUR LES NOUVELLES DONNeES ===\n")
+cat("\n=== PREDICTION SUR LES NOUVELLES DONNEES ===\n")
 
 # Chargement des nouvelles donnees
 # Note: Assurez-vous que le fichier Data_Projet_New.csv existe avec le bon format
@@ -684,7 +686,7 @@ if(file.exists("Data_Projet_New.csv")) {
   )
 
   # Preparation pour la prediction
-  df_new_pred <- df_new[, vars_cluster]
+  df_new_pred <- df_new[, vars_classifcation]
 
   # Predictions
   probs_new <- predict(final_model, df_new_pred, type = "prob")
@@ -720,35 +722,17 @@ if(file.exists("Data_Projet_New.csv")) {
   cat("Le fichier doit avoir la même structure que Data_Projet.csv (sans la colonne fraudulent).\n")
 }
 
-# ------------------------------------------------------------------------------
-# 11. SAUVEGARDE DU MODeLE
-# ------------------------------------------------------------------------------
 
-cat("\n=== SAUVEGARDE DU MODeLE ===\n")
-
-# Sauvegarde du modele final
-saveRDS(final_model, "modele_fraude_final.rds")
-cat("Modele sauvegarde dans: modele_fraude_final.rds\n")
-
-# Sauvegarde des parametres
-params <- list(
-  model_type = "Random Forest + ROSE",
-  threshold = optimal_threshold,
-  mtry = final_model$bestTune$mtry,
-  variables = vars_cluster
-)
-saveRDS(params, "parametres_modele.rds")
-cat("Parametres sauvegardes dans: parametres_modele.rds\n")
 
 # ------------------------------------------------------------------------------
-# 12. ReSUMe FINAL
+# 11. RESUME FINAL
 # ------------------------------------------------------------------------------
 
 cat("\n")
 cat("==============================================================================\n")
-cat("                           ReSUMe DU PROJET                                   \n")
+cat("                           RESUME DU PROJET                                   \n")
 cat("==============================================================================\n")
-cat("\n1. EXPLORATION DES DONNeES:\n")
+cat("\n1. EXPLORATION DES DONNEES:\n")
 cat("   - 1300 declarations analysees\n")
 cat("   - 12 variables dont 1 variable cible (fraudulent)\n")
 cat("   - Desequilibre des classes detecte et traite\n")
@@ -763,14 +747,15 @@ cat("   - 3 modeles testes\n")
 cat("   - Meilleur modele:", best_model_name, "\n")
 cat("   - Seuil optimise:", optimal_threshold, "\n")
 
-cat("\n4. PERFORMANCES DU MODeLE FINAL:\n")
+cat("\n4. PERFORMANCES DU MODELE FINAL:\n")
 cat("   - Sensibilite:", round(cm_final$byClass["Sensitivity"], 3), "\n")
 cat("   - Specificite:", round(cm_final$byClass["Specificity"], 3), "\n")
 cat("   - AUC:", round(comparison$AUC[best_model_idx], 3), "\n")
+cat("   - Cout:", round(comparison$Cout[best_model_idx], 2), "\n")
 
-cat("\n5. FICHIERS GeNeReS:\n")
+cat("\n5. FICHIERS GENERES:\n")
 cat("   - predictions_fraudes.csv (predictions sur nouvelles donnees)\n")
-cat("   - modele_fraude_final.rds (modele sauvegarde)\n")
+cat("   - comparaison_modeles.csv (tableau comparatif des modeles)\n")
 cat("   - Graphiques: distribution_fraudes.png, dendrogramme.png, etc.\n")
 
 cat("\n==============================================================================\n")
